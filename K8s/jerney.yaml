@@ -110,7 +110,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend # Renamed to match Docker Compose service name so Frontend Nginx can find it
+  name: jerney-backend
   namespace: jerney
 spec:
   type: ClusterIP # Internal only
@@ -205,13 +205,25 @@ spec:
       initContainers:
       - name: wait-for-backend
         image: busybox:1.28
-        command: [ 'sh', '-c', "until nc -z backend 5000; do echo waiting for backend; sleep 2; done;" ]
+        command: [ 'sh', '-c', "until nc -z jerney-backend 5000; do echo waiting for backend; sleep 2; done;" ]
       containers:
       - name: frontend
         # REPLACE WITH YOUR PROJECT ID
         image: gcr.io/harsha-sandbox-489905/jerney-frontend:sha-3f67497
         ports:
         - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
 ---
 # --- NETWORK POLICIES (SECURITY) ---
 

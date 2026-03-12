@@ -1,18 +1,12 @@
-node_modules/
-dist/
+# Secrets
+key.json
 .env
-*.log
+
+# Dependencies & System
+node_modules/
+.DS_Store
 
 # Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/.terraform.lock.hcl
-terraform/crash.log
-
-# Docker
-*.tar
-
-# OS
-.DS_Store
-Thumbs.db
+.terraform/
+*.tfstate
+*.tfstate.backup
