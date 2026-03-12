@@ -1,0 +1,76 @@
+services:
+  # Database Service (PostgreSQL)
+  db:
+    image: postgres:16-alpine
+    container_name: jerney-db
+    restart: unless-stopped # Auto-restart if it crashes, but not if we manually stop it
+    environment:
+      POSTGRES_USER: jerney_user
+      POSTGRES_PASSWORD: jerney_pass_2026
+      POSTGRES_DB: jerney_db
+    ports:
+      - "5432:5432" # Host Port : Container Port
+    volumes:
+      - pgdata:/var/lib/postgresql/data # Persist DB data so it survives container restarts
+    healthcheck:
+      # verify that the DB is actually accepting connections
+      test: ["CMD-SHELL", "pg_isready -U jerney_user -d jerney_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Security: Read-only root filesystem prevents attackers from modifying system files
+    # We mount tmpfs (RAM disk) for directories that PostgreSQL needs to write to (/tmp, /run)
+    tmpfs:
+      - /tmp
+      - /run
+
+  # Backend API (Node.js)
+  backend:
+    image: harsha4137/jerney-backend:latest
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jerney-backend
+    restart: unless-stopped
+    environment:
+      # Connect to the 'db' service defined above
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: jerney_user
+      DB_PASSWORD: jerney_pass_2026
+      DB_NAME: jerney_db
+    ports:
+      - "5001:5000" # Expose port 5000 to host port 5001 (to avoid conflict)
+
+    depends_on:
+      db:
+        condition: service_healthy # Wait until the DB healthcheck passes before starting
+
+    # Security Hardening
+    security_opt:
+      - no-new-privileges:true # Prevents processes from gaining more privileges (e.g., sudo)
+    read_only: true # Make the container filesystem immutable
+    tmpfs:
+      - /tmp # Allow writing to /tmp even though root is read-only
+
+  # Frontend (React + Nginx)
+  frontend:
+    image: harsha4137/jerney-frontend:latest
+    platform: linux/amd64
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jerney-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80" # Map host port 80 to container port 80 (Standard Nginx)
+    depends_on:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata: # Named volume for database persistence
+    driver: local

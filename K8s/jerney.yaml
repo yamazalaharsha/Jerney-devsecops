@@ -1,0 +1,329 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jerney
+  labels:
+    app.kubernetes.io/part-of: jerney
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jerney-db-secret
+  namespace: jerney
+  labels:
+    app.kubernetes.io/part-of: jerney
+type: Opaque
+data:
+  POSTGRES_USER: amVybmV5X3VzZXI= # Base64 encoded 'jerney_user'
+  POSTGRES_PASSWORD: amVybmV5X3Bhc3NfMjAyNg== # Base64 encoded 'jerney_pass_2026'
+  POSTGRES_DB: amVybmV5X2Ri # Base64 encoded 'jerney_db'
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: jerney-storage-class # Keep this name consistent with your PVCs
+provisioner: pd.csi.storage.gke.io # GCP Compute Engine Persistent Disk CSI Driver
+volumeBindingMode: WaitForFirstConsumer # Best practice for multi-zone clusters
+allowVolumeExpansion: true
+parameters:
+  type: pd-balanced # Equivalent to AWS gp3; options are pd-standard, pd-balanced, or pd-ssd
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: jerney
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: jerney-storage-class # Must match the metadata.name above
+  resources:
+    requests:
+      storage: 10Gi
+---
+# --- POSTGRES SERVICE ---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: jerney-db
+  namespace: jerney
+spec:
+  ports:
+  - port: 5432
+  selector:
+    app: jerney-db
+  clusterIP: None # Headless service for stable network identity
+---
+# --- POSTGRES DEPLOYMENT ---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jerney-db
+  namespace: jerney
+spec:
+  selector:
+    matchLabels:
+      app: jerney-db
+  strategy:
+    type: Recreate # Required when using RWO volumes to ensure old pod unmounts before new one starts
+  template:
+    metadata:
+      labels:
+        app: jerney-db
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_DB
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+# --- BACKEND SERVICE ---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend # Renamed to match Docker Compose service name so Frontend Nginx can find it
+  namespace: jerney
+spec:
+  type: ClusterIP # Internal only
+  selector:
+    app: jerney-backend
+  ports:
+  - port: 5000
+    targetPort: 5000
+---
+# --- BACKEND DEPLOYMENT ---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jerney-backend
+  namespace: jerney
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jerney-backend
+  template:
+    metadata:
+      labels:
+        app: jerney-backend
+    spec:
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.28
+        command: [ 'sh', '-c', "until nc -z jerney-db 5432; do echo waiting for db; sleep 2; done; echo DB ready; sleep 10;" ]
+      containers:
+      - name: backend
+        # REPLACE WITH YOUR PROJECT ID
+        image: gcr.io/harsha-sandbox-489905/jerney-backend:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        - name: DB_HOST
+          value: "jerney-db" # Matches the Service name above
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_PASSWORD
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: jerney-db-secret
+              key: POSTGRES_DB
+---
+# --- FRONTEND SERVICE (LOAD BALANCER) ---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: jerney-frontend
+  namespace: jerney
+spec:
+  type: LoadBalancer # Creates an external IP on Google Cloud
+  selector:
+    app: jerney-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+---
+# --- FRONTEND DEPLOYMENT ---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jerney-frontend
+  namespace: jerney
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jerney-frontend
+  template:
+    metadata:
+      labels:
+        app: jerney-frontend
+    spec:
+      containers:
+      - name: frontend
+        # REPLACE WITH YOUR PROJECT ID
+        image: gcr.io/harsha-sandbox-489905/jerney-frontend:latest
+        ports:
+        - containerPort: 80
+---
+# --- NETWORK POLICIES (SECURITY) ---
+
+# 1. Default Deny All
+# Denies all Ingress and Egress traffic in the namespace by default.
+# This forces us to explicitly allow traffic in the policies below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: jerney
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# 2. Database Policy
+# Allows Ingress only from the Backend pods on port 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-network-policy
+  namespace: jerney
+spec:
+  podSelector:
+    matchLabels:
+      app: jerney-db
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: jerney-backend
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress:
+  - ports:
+    # Allow DNS resolution
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# 3. Backend Policy
+# - Ingress: Only from Frontend on port 5000.
+# - Egress: To Database (5432) and DNS (53).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: jerney
+spec:
+  podSelector:
+    matchLabels:
+      app: jerney-backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: jerney-frontend
+    ports:
+    - protocol: TCP
+      port: 5000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: jerney-db
+    ports:
+    - protocol: TCP
+      port: 5432
+  - ports:
+    # Allow DNS resolution (UDP/TCP 53)
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# 4. Frontend Policy
+# - Ingress: Allow from anywhere (0.0.0.0/0) for the LoadBalancer.
+# - Egress: To Backend (5000) and DNS (53).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: jerney
+spec:
+  podSelector:
+    matchLabels:
+      app: jerney-frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: [] # Empty list means allow from all sources
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: jerney-backend
+    ports:
+    - protocol: TCP
+      port: 5000
+  - ports:
+    # Allow DNS resolution
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
