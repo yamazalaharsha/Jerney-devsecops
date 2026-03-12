@@ -61,7 +61,7 @@ function PostDetail() {
           <HiArrowLeft size={16} /> Back to feed
         </Link>
 
-        <div className="post-detail-emoji">{post.emoji || '✨'}</div>
+        <div className="post-detail-emoji">{post.emoji || '🚀'}</div>
         <h1 className="post-detail-title">{post.title}</h1>
 
         <div className="post-detail-meta">
