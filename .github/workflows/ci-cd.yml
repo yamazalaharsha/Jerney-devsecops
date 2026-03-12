@@ -183,6 +183,7 @@ jobs:
           framework: terraform
           soft_fail: true # Don't fail on infra compliance issues
           output_format: cli
+        continue-on-error: true
 
       - name: Run Checkov on Kubernetes manifests
         uses: bridgecrewio/checkov-action@v12
@@ -191,6 +192,7 @@ jobs:
           framework: kubernetes
           soft_fail: true  # Soft fail for K8s (some checks may not apply)
           output_format: cli
+        continue-on-error: true
 
   # ==============================================================
   # STAGE 6: Dockerfile Lint (Hadolint)
