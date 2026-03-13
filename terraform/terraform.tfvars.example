@@ -1,0 +1,3 @@
+project_id = "YOUR_PROJECT_ID"
+region     = "YOUR_GCP_REGION"
+cluster_name = "jerney-gke-cluster"
