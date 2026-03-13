@@ -2,11 +2,15 @@
 
 This folder contains the Terraform configuration to provision the Google Cloud Platform (GCP) infrastructure for the Jerney application.
 
-## 🏗️ Resources Created
+## 🏗️ Infrastructure Overview
 
-- **VPC Network**: Custom VPC (`jerney-vpc`) with a private subnet (`jerney-subnet`).
-- **Networking**: Cloud NAT and Router to allow private nodes outbound internet access.
-- **Kubernetes**: GKE Autopilot Cluster (`jerney-gke-cluster`) with Workload Identity enabled.
+This Terraform setup is designed to be secure, scalable, and cost-effective.
+
+- **Custom VPC Network (`jerney-vpc`)**: We create a custom VPC to ensure our network is isolated from other projects and to have full control over the IP address space. We disable auto-creation of subnets to avoid having unused subnets in every region.
+- **Private Subnet (`jerney-subnet`)**: The GKE cluster nodes and pods will reside in a private subnet, which means they are not directly accessible from the public internet, significantly reducing the attack surface.
+- **Cloud NAT & Router**: To allow the private GKE nodes to access the internet for pulling container images and other dependencies, we set up a Cloud NAT. This provides outbound internet access without exposing the nodes to inbound traffic.
+- **GKE Autopilot Cluster (`jerney-gke-cluster`)**: We use GKE Autopilot to let Google manage the cluster's underlying infrastructure, including nodes and scaling. This simplifies cluster operations and improves security by reducing the operational overhead and potential for misconfiguration.
+- **Workload Identity**: This is a key security feature. Instead of storing and managing service account keys, Workload Identity allows Kubernetes service accounts to impersonate GCP service accounts, providing a more secure way for your applications to access other Google Cloud services.
 
 ## 📋 Prerequisites
 
@@ -27,15 +31,13 @@ gcloud auth application-default login
 
 ### 2. Configure Variables
 
-Create a `terraform.tfvars` file in this directory to specify your Project ID.
+Create a `terraform.tfvars` file in this directory to specify your Project ID and region.
 
 ```bash
 # terraform.tfvars
-project_id = "harsha-sandbox-489905"
-region     = "asia-south1"
+project_id = "YOUR_PROJECT_ID"
+region     = "YOUR_GCP_REGION"
 ```
-
-> **Note:** Although `provider.tf` has a default project set, `gke.tf` requires the `project_id` variable for Workload Identity configuration.
 
 ### 3. Initialize Terraform
 
@@ -68,8 +70,10 @@ Type `yes` when prompted.
 Once the `terraform apply` is complete, configure your local `kubectl` to connect to the new GKE cluster:
 
 ```bash
-gcloud container clusters get-credentials jerney-gke-cluster --region asia-south1 --project harsha-sandbox-489905
+gcloud container clusters get-credentials YOUR_CLUSTER_NAME --region YOUR_GCP_REGION --project YOUR_PROJECT_ID
 ```
+
+Replace `YOUR_CLUSTER_NAME`, `YOUR_GCP_REGION`, and `YOUR_PROJECT_ID` with the values you used in your `.tfvars` file.
 
 Verify the connection:
 

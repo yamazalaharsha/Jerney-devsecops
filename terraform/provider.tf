@@ -10,6 +10,6 @@ terraform {
 }
 
 provider "google" {
-  project = "harsha-sandbox-489905" # Your GCP Project ID
-  region  = "asia-south1" # Mumbai, since you're in Mumbai!
+  project = var.project_id
+  region  = var.region
 }
