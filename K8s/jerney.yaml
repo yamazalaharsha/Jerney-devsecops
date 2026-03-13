@@ -144,7 +144,7 @@ spec:
       containers:
       - name: backend
         # REPLACE WITH YOUR PROJECT ID
-        image: gcr.io/harsha-sandbox-489905/jerney-backend:sha-a0377df
+        image: gcr.io/harsha-sandbox-489905/jerney-backend:sha-089442d
         ports:
         - containerPort: 5000
         env:
@@ -209,7 +209,7 @@ spec:
       containers:
       - name: frontend
         # REPLACE WITH YOUR PROJECT ID
-        image: gcr.io/harsha-sandbox-489905/jerney-frontend:sha-a0377df
+        image: gcr.io/harsha-sandbox-489905/jerney-frontend:sha-089442d
         ports:
         - containerPort: 80
         livenessProbe:
